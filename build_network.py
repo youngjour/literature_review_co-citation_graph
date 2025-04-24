@@ -22,11 +22,16 @@ ER_FIELD = 'ER'; EF_FIELD = 'EF'
 # --- Function: parse_wos_file ---
 # (Keep the parse_wos_file function exactly as provided before)
 def parse_wos_file(filepath):
-    """ Parses a Web of Science plain text file. """
+    """
+    Parses a Web of Science plain text file, correctly handling multi-line fields.
+    """
     publications = []
     current_pub = {}
     current_field = None
+    line_num = 0 # Initialize line number for error reporting
+
     try:
+        # --- File reading logic (same as before) ---
         encodings_to_try = ['utf-8', 'latin-1']
         file_content = None
         for enc in encodings_to_try:
@@ -40,34 +45,106 @@ def parse_wos_file(filepath):
         if file_content is None:
             print(f"Warning: Could not decode file {filepath} with attempted encodings. Skipping.")
             return []
+        # --- End file reading logic ---
 
-        for line in file_content:
-            line = line.strip()
-            if not line: continue
-            field_code_match = re.match(r'^([A-Z0-9]{2})\s(.*)$', line)
-            if field_code_match:
-                current_field = field_code_match.group(1)
-                value = field_code_match.group(2).strip()
-                if current_field in [AU_FIELD, AF_FIELD, C1_FIELD, CR_FIELD, DE_FIELD, ID_FIELD]:
-                    if current_field not in current_pub: current_pub[current_field] = []
-                    current_pub[current_field].append(value)
-                else: current_pub[current_field] = value
-            elif current_field and current_field in current_pub:
-                 if isinstance(current_pub[current_field], list):
-                     if current_pub[current_field]: current_pub[current_field][-1] += " " + line
-                 elif isinstance(current_pub[current_field], str): current_pub[current_field] += " " + line
-            if line.startswith(ER_FIELD):
-                if current_pub:
-                    if UT_FIELD not in current_pub: current_pub[UT_FIELD] = f"MISSING_UT_{len(publications)}"
+        for line_num, line in enumerate(file_content):
+            original_line = line # Keep original line to check indentation
+            line = line.strip() # Work with the stripped version
+
+            if not line: continue # Skip empty lines
+
+            # Check if line starts with a 2-character field code + space
+            field_code = None
+            value = None
+            is_continuation = False
+
+            if len(line) > 3 and line[2] == ' ' and line[:2].isalnum() and line[:2].isupper():
+                 field_code = line[:2]
+                 value = line[3:].strip()
+            else:
+                 # Does not start with a field code, treat as continuation or special line (like ER/FN/VR)
+                 is_continuation = True
+                 value = line # Use the stripped line content as value
+
+            # --- Handle End of Record ---
+            # Check the START of the original line for ER, FN, VR which don't have standard spacing
+            # Or check the stripped line if it's just ER
+            if original_line.startswith(ER_FIELD) or line == ER_FIELD:
+                if current_pub: # If we have data for a publication
+                    # Add UT if missing before saving
+                    if UT_FIELD not in current_pub:
+                        current_pub[UT_FIELD] = f"MISSING_UT_{len(publications)}"
                     publications.append(current_pub)
-                current_pub = {}; current_field = None
-        if current_pub and UT_FIELD in current_pub: publications.append(current_pub)
+                current_pub = {} # Reset for the next publication
+                current_field = None # Reset current field context
+                continue # Move to the next line after processing ER
+
+            # Handle special start-of-file tags if necessary (e.g., FN, VR)
+            if original_line.startswith(FN_FIELD) or original_line.startswith(VR_FIELD):
+                 # These might signal the start, reset context if needed, but usually handled by ER
+                 # We can parse them like normal fields if we hit them
+                 if line[2] == ' ': # Check format just in case
+                     field_code = line[:2]
+                     value = line[3:].strip()
+                     is_continuation = False # Treat as a new field
+                 else: # If format is weird, skip or log?
+                      continue
+
+
+            # --- Process based on whether it's a new field or continuation ---
+            if not is_continuation and field_code:
+                # === It's a new field ===
+                current_field = field_code # Update the current field context
+
+                # Fields where each line (starting with code OR indented) is a SEPARATE item
+                if current_field in [CR_FIELD, AU_FIELD, AF_FIELD, C1_FIELD, DE_FIELD, ID_FIELD]:
+                    if current_field not in current_pub:
+                        current_pub[current_field] = []
+                    current_pub[current_field].append(value) # Add value as a new list item
+
+                # Fields where continuation lines should be appended to the value (e.g., Abstract)
+                elif current_field in [AB_FIELD, TI_FIELD]:
+                    current_pub[current_field] = value # Initialize the string value
+
+                # Other single-value fields
+                else:
+                    current_pub[current_field] = value # Assign the value directly
+
+            elif is_continuation and current_field:
+                # === It's a continuation line ===
+                # Check if it's for a list-based field and properly indented (WoS uses 3 spaces)
+                if current_field in [CR_FIELD, AU_FIELD, AF_FIELD, C1_FIELD, DE_FIELD, ID_FIELD]:
+                    if original_line.startswith('   ') and current_field in current_pub:
+                        # Indented line for list field -> Add as a NEW item
+                        current_pub[current_field].append(value)
+                    elif current_field in current_pub and current_pub[current_field]:
+                        # Not indented or list not started? Append to the *last* item (handles wrapped text within one entry)
+                        current_pub[current_field][-1] += " " + value
+                    # else: List not initialized, ignore continuation? Or log warning?
+
+                # Check if it's for a string-based field
+                elif current_field in [AB_FIELD, TI_FIELD]:
+                    if current_field in current_pub:
+                        current_pub[current_field] += " " + value # Append to string
+                    # else: Field not initialized, ignore continuation?
+
+                # Else: Continuation for a field we don't explicitly handle list/string append for (ignore?)
+
+            # Note: We don't need the specific 'EF' (End of File) check usually, ER handles records.
+
+        # Add the last publication if the file doesn't end neatly with ER
+        if current_pub and UT_FIELD in current_pub:
+             publications.append(current_pub)
+
     except FileNotFoundError:
         print(f"Error: File not found at {filepath}")
         return []
     except Exception as e:
-        print(f"An error occurred parsing {filepath}: {e}")
-        return []
+        print(f"An error occurred during parsing file {filepath}: {e} near line {line_num + 1}")
+        import traceback
+        traceback.print_exc() # Print detailed traceback for debugging
+        return [] # Return empty or partially parsed data
+
     return publications
 
 # --- Function: normalize_cited_ref ---
