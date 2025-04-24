@@ -138,59 +138,55 @@ def build_cocitation_network(publications):
 # --- Function: save_graph_to_graphml ---
 # Added function to handle saving with correct attributes and types
 def save_graph_to_graphml(graph, filepath):
-    """Saves the networkx graph to a GraphML file."""
+    """Saves the networkx graph to a GraphML file using lxml."""
     if graph.number_of_nodes() == 0:
         print("Graph is empty, skipping save.")
         return
 
     print(f"Preparing graph for saving to {filepath}...")
-    # Prepare attributes for GraphML export (match key types from user's example)
+    # --- Ensure data types are correct before saving ---
     for node, data in graph.nodes(data=True):
+        # Convert attributes to appropriate types
         data['freq'] = int(data.get('freq', 0))
         data['year'] = str(data.get('year', '')) # Year of the cited reference
         label = data.get('label', node)
-        data['name'] = label # Use label as name
+        data['name'] = str(label) # Ensure name is string
         parts = label.split(', ')
-        data['author'] = parts[0] if len(parts) > 0 else label
-        data['so'] = parts[2] if len(parts) > 2 else 'SO' # Extract Source part
-        # Add placeholders matching the user's graphml example
+        data['author'] = str(parts[0]) if len(parts) > 0 else str(label)
+        data['so'] = str(parts[2]) if len(parts) > 2 else 'SO' # Ensure string
+        # Add placeholders (ensure they are strings as defined in GraphML standard types)
         data['title'] = '...'
         data['vol'] = '0'
         data['page'] = '0'
-        data['ut'] = '' # UT of the cited reference (usually not available)
-
+        data['ut'] = ''
 
     for u, v, data in graph.edges(data=True):
         data['weight'] = float(data.get('weight', 0.0))
-        # Add placeholders matching the user's graphml example
-        data['slice'] = 0 # Placeholder - could be derived from citing year if needed
-        data['year'] = '' # Placeholder - could be derived from citing year if needed
+        # Add placeholders (ensure they are strings or appropriate numeric type)
+        data['slice'] = int(0) # Use integer type
+        data['year'] = '' # Use string type
 
-    # Define keys for GraphML (matching user's example)
-    keys_node = {
-        "name": "string", "label": "string", "author": "string", "year": "string",
-        "title": "string", "so": "string", "vol": "string", "page": "string",
-        "ut": "string", "freq": "integer" # Changed from int to integer
-    }
-    keys_edge = {"weight": "float", "slice": "integer", "year": "string"} # Changed from int to integer
+    # --- Remove the problematic arguments ---
+    # These arguments ('node_attr_types', 'edge_attr_types') are not expected by write_graphml_lxml
+    # keys_node = { ... } # No longer needed here
+    # keys_edge = { ... } # No longer needed here
 
     try:
         # Ensure the output directory exists
         output_dir = Path(filepath).parent
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Write GraphML using lxml for better compatibility
-        nx.write_graphml_lxml(graph, str(filepath),
-                              node_attr_types=keys_node,
-                              edge_attr_types=keys_edge,
-                              named_key_ids=True)
+        # Write GraphML using lxml (without type arguments)
+        # named_key_ids=True ensures readable keys in the graphml file
+        nx.write_graphml_lxml(graph, str(filepath), named_key_ids=True, infer_numeric_types=True) # Added infer_numeric_types
         print(f"Graph successfully saved to {filepath}")
     except ImportError:
         print("Error: Saving to GraphML requires the 'lxml' library. Install it using: pip install lxml")
-        # Fallback to basic XML writer (might have issues with types)
+        # Fallback to basic XML writer (less preferred)
         try:
+            # Basic writer also doesn't use the _attr_types arguments
             nx.write_graphml_xml(graph, str(filepath), named_key_ids=True)
-            print(f"Graph saved using basic XML writer (lxml preferred). Check attribute types in {filepath}.")
+            print(f"Graph saved using basic XML writer (lxml preferred).")
         except Exception as e_xml:
             print(f"Error saving graph with basic XML writer: {e_xml}")
     except Exception as e:
