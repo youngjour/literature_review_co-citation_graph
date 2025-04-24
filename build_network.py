@@ -73,66 +73,178 @@ def parse_wos_file(filepath):
 # --- Function: normalize_cited_ref ---
 # (Keep the normalize_cited_ref function exactly as provided before)
 def normalize_cited_ref(ref_string):
-    """ Attempts to parse and normalize a cited reference string. """
+    """
+    Attempts to parse and normalize a cited reference string (more aggressively).
+    Returns a standardized string identifier or None if parsing fails.
+    Example target format: "AUTHOR, YEAR, SOURCE" (all uppercase, simplified)
+    """
     ref_string = ref_string.strip()
+    # Handle cases like "[Anonymous], INT J BEHAV NUTR PHY" where year is missing early
+    # Try to extract year first from anywhere in the string
+    year = None
+    year_match = re.search(r'\b(1[89]\d{2}|20\d{2})\b', ref_string) # Search whole string
+    if year_match:
+        year = year_match.group(1)
+    else:
+        year = "UNKNOWN_YEAR" # Fallback if no year found anywhere
+
+    # Split by comma AFTER potentially finding year
     parts = [p.strip() for p in ref_string.split(',')]
     if not parts: return None
-    author = parts[0].upper(); author = "ANONYMOUS" if author.startswith('[ANONYMOUS]') or not author else author
-    year, source = None, None
+
+    # 1. Author Normalization (Uppercase, remove periods)
+    raw_author = parts[0].upper()
+    if raw_author.startswith('[ANONYMOUS]'):
+        author = "ANONYMOUS"
+    else:
+        # Remove periods and excessive spaces
+        author = re.sub(r'\.', '', raw_author).strip()
+        author = re.sub(r'\s+', ' ', author)
+        # Let's NOT truncate initials for now, just clean name: "DAVIS F D" -> "DAVIS F D"
+        # More complex initial handling might be needed but adds risk
+
+    # 2. Source Normalization (Uppercase, remove Vol/Page/DOI info, basic cleaning)
+    source = "UNKNOWN_SOURCE" # Default
+    potential_source_str = ""
+    # Heuristic: Source usually starts after Author and potentially Year if year was in parts[1]
     if len(parts) > 1:
-        year_match = re.search(r'\b(1[89]\d{2}|20\d{2})\b', parts[1])
-        if year_match:
-            year = year_match.group(1)
-            potential_source = ", ".join(parts[2:]).strip()
-            if len(parts) > 2 and not re.match(r'^(V|P|DOI)', parts[2].strip(), re.I): source = parts[2].strip().upper()
-            elif potential_source:
-                 source_match = re.match(r'^(.*?)(?:,?\s*(?:V\d+|P\d+|DOI\s+|HTTP|WWW))', potential_source, re.I)
-                 source = source_match.group(1).strip().upper() if source_match else (parts[2].strip().upper() if len(parts) > 2 else "UNKNOWN_SOURCE")
-            else: source = "UNKNOWN_SOURCE"
-        else: year, source = "UNKNOWN_YEAR", "UNKNOWN_SOURCE"
-    else: year, source = "UNKNOWN_YEAR", "UNKNOWN_SOURCE"
-    if source: source = re.sub(r'\s+', ' ', source)
-    if author and year and source:
-        max_source_len = 50
-        return f"{author}, {year}, {source[:max_source_len]}"
-    else: return f"{author}, {year or '????'}, {source or '???'}"
+        if parts[1] == year: # If year was the second part
+             potential_source_str = ", ".join(parts[2:]).upper()
+        else: # Year was found elsewhere or missing, source likely starts from part 2
+             potential_source_str = ", ".join(parts[1:]).upper()
+
+    if potential_source_str:
+        # Remove details like V..., P..., DOI..., HTTP... etc. more broadly
+        # This regex looks for ", V" or ", P" or ", DOI" etc. and removes everything after
+        cleaned_source = re.split(r',\s+(?:V|P|DOI|HTTP|WWW)\b', potential_source_str, 1)[0].strip()
+
+        # Further cleanups
+        cleaned_source = cleaned_source.strip(', ') # Remove leading/trailing commas/spaces
+        # Special case: if the source is just the year, mark as unknown
+        if cleaned_source == year:
+             source = "UNKNOWN_SOURCE"
+        elif cleaned_source:
+             source = re.sub(r'\s+', ' ', cleaned_source) # Consolidate whitespace
+             # Truncate source to avoid excessive detail/variation? (optional)
+             # max_source_len = 40
+             # source = source[:max_source_len]
+
+    # Return standardized key: AUTHOR, YEAR, SOURCE
+    # Only return if author and year are valid (not None or empty strings)
+    if author and year:
+        return f"{author}, {year}, {source}"
+    else:
+        # Return None if essential parts like author couldn't be determined
+        # This prevents creating nodes with invalid keys.
+        return None
 
 
 # --- Function: build_cocitation_network ---
-# (Keep the build_cocitation_network function exactly as provided before)
 def build_cocitation_network(publications):
-    """ Builds a co-citation network from parsed WoS publications. """
+    """ Builds a co-citation network from parsed WoS publications (with debugging). """
     G = nx.Graph()
     cited_ref_counts = Counter()
     cocitation_links = defaultdict(int)
-    node_info = {}
+    node_info = {} # Store info like year for each node
+
     print(f"Building network from {len(publications)} citing publications...")
     processed_pubs = 0
+    debug_prints_done = 0 # Counter for how many publications we print debug info for
+
     for pub in publications:
-        citing_pub_id = pub.get(UT_FIELD, 'UnknownUT')
-        citing_pub_year = pub.get(PY_FIELD, None)
+        citing_pub_id = pub.get(UT_FIELD, f'UnknownUT_{processed_pubs}') # Ensure unique unknown ID
+        citing_pub_year = pub.get(PY_FIELD, None) # Year the co-citation happened
         cited_refs_raw = pub.get(CR_FIELD, [])
+
         normalized_refs = []
+        # --- Debug: Print raw CRs for the first few pubs ---
+        if debug_prints_done < 3 and cited_refs_raw: # Only print if there are references
+             print(f"\n--- Debug: Citing Pub ID: {citing_pub_id} ---")
+             print(f"Raw CRs ({len(cited_refs_raw)}):")
+             # Limit printing raw refs if list is very long
+             max_raw_to_print = 20
+             for i, r in enumerate(cited_refs_raw[:max_raw_to_print]):
+                 print(f"  [{i}] {r}")
+             if len(cited_refs_raw) > max_raw_to_print:
+                 print(f"  ... (and {len(cited_refs_raw) - max_raw_to_print} more)")
+
         for ref_str in cited_refs_raw:
-            norm_ref = normalize_cited_ref(ref_str)
+            # *** Make sure you are using the intended normalize_cited_ref function here ***
+            norm_ref = normalize_cited_ref(ref_str) # Call the (potentially revised) function
             if norm_ref:
                 normalized_refs.append(norm_ref)
+                # Count total citations for each ref
                 cited_ref_counts[norm_ref] += 1
+                # Store year if possible (basic extraction from normalized string)
                 if norm_ref not in node_info:
-                     parts = norm_ref.split(', '); ref_year = parts[1] if len(parts) > 1 and parts[1].isdigit() else None
+                     parts = norm_ref.split(', ')
+                     ref_year = parts[1] if len(parts) > 1 and parts[1].isdigit() else None
                      node_info[norm_ref] = {'year': ref_year, 'label': norm_ref}
-        for ref1, ref2 in itertools.combinations(normalized_refs, 2):
-            edge = tuple(sorted((ref1, ref2))); cocitation_links[edge] += 1
+
+        # --- Debug: Print normalized refs and pairs for the first few pubs ---
+        if debug_prints_done < 3 and normalized_refs:
+            print(f"Normalized Refs ({len(normalized_refs)}):")
+            # Limit printing normalized refs if list is very long
+            max_norm_to_print = 20
+            for i, r in enumerate(normalized_refs[:max_norm_to_print]):
+                 print(f"  [{i}] {r}")
+            if len(normalized_refs) > max_norm_to_print:
+                 print(f"  ... (and {len(normalized_refs) - max_norm_to_print} more)")
+            print("Generating combinations...")
+
+        # Generate co-citation pairs (edges)
+        pair_count_this_pub = 0
+        # Use itertools.combinations to get all unique pairs WITHIN the normalized list for THIS publication
+        if len(normalized_refs) >= 2: # Optimization: Only run combinations if there are at least 2 refs
+            for ref1, ref2 in itertools.combinations(normalized_refs, 2):
+                # Ensure consistent edge ordering (important for defaultdict)
+                edge = tuple(sorted((ref1, ref2)))
+                cocitation_links[edge] += 1
+                pair_count_this_pub += 1
+        else:
+             # --- Debug: Indicate if not enough refs for pairs ---
+             if debug_prints_done < 3 and normalized_refs:
+                 print("Not enough normalized references (need >= 2) to form pairs for this publication.")
+
+
+        # --- Debug: Print number of pairs found ---
+        if debug_prints_done < 3 and cited_refs_raw: # Only increment if we printed debug info
+             print(f"Found {pair_count_this_pub} co-citation pairs for this publication.")
+             debug_prints_done += 1 # Increment after processing one pub fully
+
         processed_pubs += 1
-        if processed_pubs % 500 == 0: print(f"  Processed {processed_pubs}/{len(publications)} publications...") # Print less often for large datasets
-    print(f"Finished processing publications. Found {len(cited_ref_counts)} unique cited references.")
-    print(f"Found {len(cocitation_links)} co-citation links.")
+        if processed_pubs % 500 == 0: # Print progress less often
+             print(f"  Processed {processed_pubs}/{len(publications)} publications...")
+
+    print(f"\nFinished processing publications.")
+    print(f"Total unique cited references identified (nodes): {len(cited_ref_counts)}")
+    print(f"Total unique co-citation links found (edge types): {len(cocitation_links)}")
+    # Calculate total co-citations (sum of weights)
+    total_cocitations = sum(cocitation_links.values())
+    print(f"Total co-citation instances (sum of edge weights): {total_cocitations}")
+
+
+    # Add nodes to the graph
+    print("Adding nodes to graph...")
     for ref, count in cited_ref_counts.items():
         info = node_info.get(ref, {})
-        G.add_node(ref, label=info.get('label', ref), freq=count, year=info.get('year', None))
+        G.add_node(
+            ref,
+            label=info.get('label', ref), # Use label or ref itself
+            freq=count,
+            year=info.get('year', None) # Add year if found
+        )
+
+    # Add edges to the graph
+    print("Adding edges to graph...")
+    edges_added = 0
     for (ref1, ref2), weight in cocitation_links.items():
-        if G.has_node(ref1) and G.has_node(ref2): G.add_edge(ref1, ref2, weight=float(weight))
-    print(f"Built graph with {G.number_of_nodes()} nodes and {G.number_of_edges()} edges.")
+        # Ensure nodes exist before adding edge (should always be true with this logic)
+        if G.has_node(ref1) and G.has_node(ref2):
+            G.add_edge(ref1, ref2, weight=float(weight)) # Use float for weight like graphml
+            edges_added += 1
+
+    print(f"Built graph with {G.number_of_nodes()} nodes and {G.number_of_edges()} edges (Edges added based on {edges_added} unique links).")
     return G
 
 # --- Function: save_graph_to_graphml ---
