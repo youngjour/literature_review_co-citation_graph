@@ -206,21 +206,47 @@ if __name__ == "__main__":
     output_filename = 'python_generated_cocitation_network.graphml'
     output_filepath = graphml_output_dir / output_filename
 
-    print(f"Looking for WoS files in: {wos_data_dir}")
+    print(f"Looking for WoS files matching 'savedrecs*.txt' in: {wos_data_dir}")
 
     all_publications = []
     # Check if the directory exists
     if not wos_data_dir.is_dir():
         print(f"Error: Input directory not found: {wos_data_dir}")
     else:
-        # Find all .txt files in the specified directory
-        wos_files = list(wos_data_dir.glob('*.txt'))
-        print(f"Found {len(wos_files)} .txt files to process.")
+        # Find all .txt files first
+        all_txt_files = list(wos_data_dir.glob('*.txt'))
 
-        if not wos_files:
-            print("No .txt files found. Please check the directory.")
+        # --- New code to filter and sort files ---
+        target_files = []
+        file_pattern = re.compile(r"savedrecs(?: \((\d+)\))?\.txt") # Regex to match pattern and capture number
+
+        files_with_num = []
+        for f_path in all_txt_files:
+            match = file_pattern.match(f_path.name)
+            if match:
+                # Extract number in parenthesis, default to 0 if no parenthesis
+                num_str = match.group(1)
+                num = int(num_str) if num_str else 0
+                files_with_num.append((num, f_path)) # Store as tuple (number, path)
+
+        # Sort files based on the extracted number
+        files_with_num.sort(key=lambda x: x[0])
+
+        # Get the sorted list of file paths
+        wos_files_to_process = [f_path for num, f_path in files_with_num]
+        # --- End of new code ---
+
+        print(f"Found {len(wos_files_to_process)} files matching the pattern to process (sorted):")
+        # Optional: print the sorted list for verification
+        # for f in wos_files_to_process:
+        #     print(f"  - {f.name}")
+
+
+        if not wos_files_to_process:
+            print("No files matching the 'savedrecs*.txt' pattern found. Please check the directory and filenames.")
         else:
-            for wos_file in wos_files:
+            # Loop through the sorted list of files
+            for wos_file in wos_files_to_process:
                 print(f"Parsing {wos_file.name}...")
                 pubs = parse_wos_file(wos_file)
                 all_publications.extend(pubs)
