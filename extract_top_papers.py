@@ -10,7 +10,7 @@ from build_network import parse_wos_file, build_cocitation_network
 
 # --- Configuration ---
 # Set how many of the top-cited papers you want to extract.
-TOP_N = 50
+TOP_N = 2000
 # Set the desired filename for the output.
 OUTPUT_FILENAME = f"top_{TOP_N}_cited_papers.txt"
 # --- End Configuration ---
