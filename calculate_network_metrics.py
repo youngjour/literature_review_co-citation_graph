@@ -65,11 +65,11 @@ def calculate_and_compile_metrics(graph):
     degree_centrality = nx.degree_centrality(graph)
     print("  Calculated Degree Centrality.")
 
-    # 3. Calculate Betweenness Centrality
-    # Note: This can be slow on very large graphs.
-    print("  Calculating Betweenness Centrality (this may take a few moments)...")
-    betweenness_centrality = nx.betweenness_centrality(graph, normalized=True, endpoints=False)
-    print("  Calculated Betweenness Centrality.")
+    # # 3. Calculate Betweenness Centrality
+    # # Note: This can be slow on very large graphs.
+    # print("  Calculating Betweenness Centrality (this may take a few moments)...")
+    # betweenness_centrality = nx.betweenness_centrality(graph, normalized=True, endpoints=False)
+    # print("  Calculated Betweenness Centrality.")
 
     # 4. Combine all metrics into a single data structure
     metrics_data = []
@@ -77,8 +77,8 @@ def calculate_and_compile_metrics(graph):
         metrics_data.append({
             'Paper': node,
             'Citation_Count': citation_counts.get(node, 0),
-            'Degree_Centrality': degree_centrality.get(node, 0.0),
-            'Betweenness_Centrality': betweenness_centrality.get(node, 0.0)
+            'Degree_Centrality': degree_centrality.get(node, 0.0)
+            # 'Betweenness_Centrality': betweenness_centrality.get(node, 0.0)
         })
         
     # 5. Convert to a Pandas DataFrame for easy handling
