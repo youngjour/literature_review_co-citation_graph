@@ -1,5 +1,3 @@
-# find_reference_details.py
-
 import re
 from pathlib import Path
 from collections import defaultdict
