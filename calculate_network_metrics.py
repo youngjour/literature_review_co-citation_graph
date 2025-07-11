@@ -6,19 +6,18 @@ import operator
 import argparse
 
 # Reuse the robust parsing and network building functions from your project
+# This assumes build_network.py is in the same directory
 from build_network import parse_wos_file, build_cocitation_network
 
 # --- Configuration ---
 # Set how many of the top papers you want to print to the screen
 NUM_TO_DISPLAY = 20
-# Set the desired filename for the output CSV file.
-OUTPUT_FILENAME = "network_metrics.csv"
 # --- End Configuration ---
 
 
 def get_all_publications(wos_data_dir):
-    """Parses all WoS files and returns a single list of all publications."""
-    print("--- Parsing all Web of Science files ---")
+    """Parses all WoS files from a specific project directory and returns a single list of all publications."""
+    print(f"--- Parsing all Web of Science files for project: {wos_data_dir.name} ---")
     
     # File discovery and sorting
     file_pattern_glob = 'savedrecs*.txt'
@@ -66,13 +65,13 @@ def calculate_and_compile_metrics(graph):
     degree_centrality = nx.degree_centrality(graph)
     print("  Calculated Degree Centrality.")
 
-    # # 3. Calculate Betweenness Centrality
-    # # Note: This can be slow on very large graphs.
+    # Note: Betweenness Centrality is commented out as requested due to long processing time.
+    # To enable it, uncomment the following lines and the line in the metrics_data dictionary.
     # print("  Calculating Betweenness Centrality (this may take a few moments)...")
     # betweenness_centrality = nx.betweenness_centrality(graph, normalized=True, endpoints=False)
     # print("  Calculated Betweenness Centrality.")
 
-    # 4. Combine all metrics into a single data structure
+    # 3. Combine all metrics into a single data structure
     metrics_data = []
     for node in graph.nodes():
         metrics_data.append({
@@ -82,7 +81,7 @@ def calculate_and_compile_metrics(graph):
             # 'Betweenness_Centrality': betweenness_centrality.get(node, 0.0)
         })
         
-    # 5. Convert to a Pandas DataFrame for easy handling
+    # 4. Convert to a Pandas DataFrame for easy handling
     df = pd.DataFrame(metrics_data)
     
     # Sort the dataframe by the most important metric, e.g., Citation Count
@@ -92,25 +91,22 @@ def calculate_and_compile_metrics(graph):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run analysis for a specific project.")
+    # Setup to read a project folder name from the command line
+    parser = argparse.ArgumentParser(description="Calculate network metrics for a specific project's co-citation graph.")
     parser.add_argument("project_folder", type=str, help="The name of the project folder inside 'data/wos/' (e.g., 'smart_city' or 'urban_computing')")
     args = parser.parse_args()
 
     script_dir = Path(__file__).resolve().parent
+    # Construct paths based on the project folder argument
     wos_data_dir = script_dir / 'data' / 'wos' / args.project_folder
-
-    # ... (the rest of the original code in the __main__ block of each script) ...
-    # For example, in extract_top_papers.py, you would also want to modify the output filename:
-    # OUTPUT_FILENAME = f"{args.project_folder}_top_{TOP_N}_cited_papers.txt"
-    # And in calculate_network_metrics.py:
-    # OUTPUT_FILENAME = f"{args.project_folder}_network_metrics.csv"
+    output_dir = script_dir / 'data'
     
-    # NOTE: You will need to make sure the rest of the main block code is correctly
-    # placed after these modifications. The core change is adding the argparse
-    # section and modifying the wos_data_dir path.
-    output_dir = script_dir / 'data' # Save the CSV in the main data directory
+    # Make the output filename specific to the project
+    output_filename = f"{args.project_folder}_network_metrics.csv"
 
-    # 1. Load all publications from the raw files
+    print(f"\n--- Starting metric calculation for project: {args.project_folder} ---")
+
+    # 1. Load all publications from the specified project folder
     all_pubs = get_all_publications(wos_data_dir)
 
     if all_pubs:
@@ -130,8 +126,8 @@ if __name__ == "__main__":
             pd.options.display.float_format = '{:.6f}'.format
             print(metrics_df.head(NUM_TO_DISPLAY).to_string())
 
-            # 5. Save the full, sorted DataFrame to a CSV file
-            output_filepath = output_dir / OUTPUT_FILENAME
+            # 5. Save the full, sorted DataFrame to a project-specific CSV file
+            output_filepath = output_dir / output_filename
             try:
                 metrics_df.to_csv(output_filepath, index=False)
                 print(f"\n--- Success! ---")
