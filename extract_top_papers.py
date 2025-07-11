@@ -2,27 +2,24 @@
 
 import re
 from pathlib import Path
-from collections import defaultdict
-import operator
 import argparse
 
-# Reuse the robust parsing and network building functions from your project
+# Reuse the robust parsing function from your project
 # This assumes build_network.py is in the same directory
-from build_network import parse_wos_file, build_cocitation_network
+from build_network import parse_wos_file
 
-def create_publication_database(wos_data_dir):
+def get_all_publications(wos_data_dir):
     """
-    Parses all WoS files from a specific project directory and builds a UT-keyed database,
-    a searchable index, and a list of all publications for network building.
+    Parses all WoS files from a specific project directory and returns a single list of all publications.
     """
-    print(f"--- Building Publication Database for Lookup in: {wos_data_dir.name} ---")
+    print(f"--- Parsing all Web of Science files for project: {wos_data_dir.name} ---")
     
     # File discovery and sorting
     file_pattern_glob = 'savedrecs*.txt'
     all_txt_files_found = list(wos_data_dir.glob(file_pattern_glob))
     if not all_txt_files_found:
         print(f"Error: No files matching '{file_pattern_glob}' found in {wos_data_dir}")
-        return None, None, None
+        return []
         
     file_name_pattern_re = re.compile(r"^(savedrecs)(?: \((\d+)\))?\.txt$")
     files_with_num = []
@@ -35,87 +32,21 @@ def create_publication_database(wos_data_dir):
     files_with_num.sort(key=lambda x: x[0])
     wos_files_to_process = [f_path for num, f_path in files_with_num]
 
-    # Build the databases
-    pub_database_by_ut = {}
-    search_index = defaultdict(list)
-    all_publications_for_network = []
-    
-    total_pubs = 0
+    # Parse all files into one list
+    all_publications = []
     for wos_file_path in wos_files_to_process:
-        # print(f"  Parsing {wos_file_path.name}...") # Uncomment for more verbose output
+        print(f"  Parsing {wos_file_path.name}...")
         pubs_from_file = parse_wos_file(wos_file_path)
-        all_publications_for_network.extend(pubs_from_file)
+        all_publications.extend(pubs_from_file)
 
-        for pub in pubs_from_file:
-            ut = pub.get('UT')
-            if not ut: continue
-            
-            pub_database_by_ut[ut] = pub
-            
-            authors = pub.get('AU', [])
-            year = pub.get('PY')
-            if authors and year:
-                first_author_surname = authors[0].split(',')[0].strip().upper()
-                lookup_key = (first_author_surname, year)
-                search_index[lookup_key].append(ut)
-        total_pubs += len(pubs_from_file)
-
-    print(f"  Database built. Parsed {total_pubs} publications.")
-    return pub_database_by_ut, search_index, all_publications_for_network
-
-def find_top_cited_papers(graph, num_to_find):
-    """
-    Finds the top N most frequently cited papers from the network graph.
-    """
-    print(f"\n--- Identifying Top {num_to_find} Most-Cited Papers from Network ---")
-    if not graph or graph.number_of_nodes() == 0:
-        print("  Graph is empty. Cannot identify top papers.")
-        return []
-
-    node_frequencies = {node: data['freq'] for node, data in graph.nodes(data=True)}
-    sorted_nodes = sorted(node_frequencies.items(), key=operator.itemgetter(1), reverse=True)
-    
-    top_nodes = sorted_nodes[:num_to_find]
-    print(f"  Identified top {len(top_nodes)} papers based on citation frequency.")
-
-    return [node for node, freq in top_nodes]
-
-
-def search_for_records(target_refs, search_index, pub_database_by_ut):
-    """
-    Takes a list of normalized reference strings and finds their full records.
-    """
-    print("\n--- Matching Top Papers to Full Records in Database ---")
-    found_records = []
-    not_found_count = 0
-    for target in target_refs:
-        parts = target.split(',')
-        if len(parts) < 2: continue
-
-        target_author_surname = parts[0].strip().upper().split(' ')[0]
-        target_year = parts[1].strip()
-
-        search_key = (target_author_surname, target_year)
-        found_uts = search_index.get(search_key)
-
-        if found_uts:
-            for ut in found_uts:
-                record = pub_database_by_ut.get(ut)
-                if record and record not in found_records:
-                    found_records.append(record)
-        else:
-            not_found_count += 1
-    
-    print(f"  Successfully found full records for {len(found_records)} out of {len(target_refs)} top papers.")
-    if not_found_count > 0:
-        print(f"  Note: {not_found_count} top cited papers were not found in the source dataset (likely foundational papers from other fields).")
-    return found_records
+    print(f"  Finished parsing. Total publications found: {len(all_publications)}")
+    return all_publications
 
 def write_records_to_file(records, output_dir, filename):
     """
     Writes a list of publication records to a new file in WoS format.
     """
-    print(f"\n--- Writing Found Records to '{filename}' ---")
+    print(f"\n--- Writing Top {len(records)} Records to '{filename}' ---")
     if not records:
         print("  No records to write.")
         return
@@ -152,7 +83,7 @@ def write_records_to_file(records, output_dir, filename):
 
 if __name__ == "__main__":
     # Setup to read arguments from the command line
-    parser = argparse.ArgumentParser(description="Extract full records for the most-cited papers in a project's co-citation network.")
+    parser = argparse.ArgumentParser(description="Extracts the top N most cited source papers from a project's dataset based on the 'TC' field.")
     parser.add_argument("project_folder", type=str, help="The name of the project folder inside 'data/wos/' (e.g., 'smart_city' or 'urban_computing')")
     parser.add_argument("--top_n", type=int, default=200, help="The number of top-cited papers to extract (default: 200).")
     args = parser.parse_args()
@@ -166,27 +97,24 @@ if __name__ == "__main__":
     output_dir = script_dir / 'data' / 'extracted_papers' / args.project_folder
     
     # Make the output filename specific to the project and the number of papers
-    output_filename = f"top_{args.top_n}_cited_papers.txt"
+    output_filename = f"top_{args.top_n}_source_papers.txt"
 
     print(f"\n--- Starting extraction for project: {args.project_folder} ---")
 
-    # 1. Build the database of all publications
-    db, s_index, all_pubs = create_publication_database(wos_data_dir)
+    # 1. Load all publications from the specified project folder
+    all_pubs = get_all_publications(wos_data_dir)
 
     if all_pubs:
-        # 2. Build the co-citation network to get citation counts
-        # We use low thresholds here as we just need the node frequencies
-        graph = build_cocitation_network(all_pubs, 
-                                         min_node_citations_threshold=1, 
-                                         min_cocitation_strength_threshold=1)
+        # 2. Sort the publications by their 'TC' (Times Cited) value
+        # We use a lambda function to handle missing 'TC' fields and convert to int for sorting
+        print(f"\n--- Sorting {len(all_pubs)} source papers by citation count ('TC' field) ---")
+        sorted_pubs = sorted(all_pubs, key=lambda p: int(p.get('TC', 0)), reverse=True)
+        
+        # 3. Get the top N papers from the sorted list
+        top_papers = sorted_pubs[:args.top_n]
+        print(f"  Selected top {len(top_papers)} papers.")
 
-        # 3. Identify the top N most-cited papers from the network
-        top_paper_nodes = find_top_cited_papers(graph, args.top_n)
-
-        # 4. Find the full records for these top papers
-        full_records_to_save = search_for_records(top_paper_nodes, s_index, db)
-
-        # 5. Write these records to a new, single txt file
-        write_records_to_file(full_records_to_save, output_dir, output_filename)
+        # 4. Write these top papers to a new file
+        write_records_to_file(top_papers, output_dir, output_filename)
 
     print("\nScript finished.")
