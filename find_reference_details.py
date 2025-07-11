@@ -2,6 +2,9 @@ import re
 from pathlib import Path
 from collections import defaultdict
 from build_network import parse_wos_file 
+import argparse
+
+from build_network import parse_wos_file
 
 # --- Main Logic ---
 def find_reference_details_by_ut(target_refs, wos_data_dir):
@@ -98,19 +101,16 @@ def find_reference_details_by_ut(target_refs, wos_data_dir):
             print(f"    You can search for it externally: {google_scholar_query}")
 
 if __name__ == "__main__":
-    script_dir = Path(__file__).resolve().parent
-    wos_data_dir = script_dir / 'data' / 'wos'
+    parser = argparse.ArgumentParser(description="Find details for specific papers within a project's dataset.")
+    parser.add_argument("project_folder", type=str, help="The name of the project folder inside 'data/wos/' (e.g., 'smart_city')")
+    parser.add_argument("references", nargs='+', type=str, help="A list of references to find, in 'Author Year' format (e.g., \"Caragliu 2011\")")
+    args = parser.parse_args()
 
-    references_to_find = [
-        "Caragliu 2011",
-        "Zanella 2014",
-        "Albino 2015",
-        "He 2016",
-        "Menouar 2017",
-        "Hashem 2016",
-        "Fornell 1981", 
-        "Davis 1989",   
-    ]
+    script_dir = Path(__file__).resolve().parent
+
+    wos_data_dir = script_dir / 'data' / 'wos' / args.project_folder
+    
+    references_to_find = args.references
     
     find_reference_details_by_ut(references_to_find, wos_data_dir)
 

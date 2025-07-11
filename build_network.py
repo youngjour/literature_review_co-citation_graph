@@ -9,6 +9,7 @@ from collections import defaultdict, Counter
 import itertools
 # import math # Not strictly used
 from pathlib import Path # Modern way to handle paths
+import argparse
 
 # --- Constants for WoS Field Codes ---
 FN_FIELD = 'FN'; VR_FIELD = 'VR'; PT_FIELD = 'PT'; AU_FIELD = 'AU'; AF_FIELD = 'AF'
@@ -512,90 +513,63 @@ def save_graph_to_graphml(graph, filepath):
         import traceback
         traceback.print_exc()
 
-# --- Main Execution Logic ---
-if __name__ == "__main__":
-    script_dir = Path(__file__).resolve().parent # Use resolve() for more robust path
-    wos_data_dir = script_dir / 'data' / 'wos'
-    graphml_output_dir = script_dir / 'data' / 'graphml'
+
+def main():
+    parser = argparse.ArgumentParser(description="Build a co-citation network for a specific project.")
+    parser.add_argument("project_folder", type=str, help="The name of the project folder inside 'data/wos/' (e.g., 'smart_city' or 'urban_computing')")
+    args = parser.parse_args()
+
+    script_dir = Path(__file__).resolve().parent
     
-    # --- Configuration: Set your input file pattern and output filename ---
-    # Example: process all 'savedrecs*.txt' or a specific file like 'my_data.txt'
-    file_pattern_glob = 'savedrecs*.txt' # Default to original pattern
-    # For example, if you have a single file named 'my_wos_data.txt':
-    # file_pattern_glob = 'my_wos_data.txt' 
-    # Make sure it's in the 'data/wos/' directory, or adjust path accordingly.
-    # wos_files_to_process = [wos_data_dir / "your_single_file.txt"] # Alternative for single file
+    wos_data_dir = script_dir / 'data' / 'wos' / args.project_folder
+    output_dir = script_dir / 'data'
 
-    output_filename = 'python_cocitation_network_filtered.graphml' # Changed output filename
-    # --- End Configuration ---
+    print(f"--- Starting process for project: {args.project_folder} ---")
 
-    output_filepath = graphml_output_dir / output_filename
+    file_pattern_glob = 'savedrecs*.txt'
+    all_txt_files_found = list(wos_data_dir.glob(file_pattern_glob))
 
-    # --- Filtering Thresholds ---
-    # Set these values to filter the graph. Default is 1 (no effective filtering).
-    # Adjust these based on your dataset size and desired level of detail.
-    MIN_NODE_CITATIONS = 5    # Example: Node must be cited at least 5 times overall in your dataset
-    MIN_COCITATION_STRENGTH = 2 # Example: Edge must have a co-citation weight of at least 2
-    # ---
-    print(f"Looking for WoS files matching '{file_pattern_glob}' in: {wos_data_dir}")
+    if not all_txt_files_found:
+        print(f"\nError: No files matching '{file_pattern_glob}' found in directory: {wos_data_dir}")
+        print("Please make sure the project folder name is correct and contains the data files.")
+        return
+
+    file_name_pattern_re = re.compile(r"^(savedrecs)(?: \((\d+)\))?\.txt$")
+    files_with_num = []
+    for f_path in all_txt_files_found:
+        match = file_name_pattern_re.match(f_path.name)
+        if match:
+            num_str = match.group(2)
+            num = int(num_str) if num_str else 0
+            files_with_num.append((num, f_path))
+    
+    files_with_num.sort(key=lambda x: x[0])
+    wos_files_to_process = [f_path for num, f_path in files_with_num]
 
     all_publications = []
-    if not wos_data_dir.is_dir():
-        print(f"Error: Input directory not found: {wos_data_dir}")
-    else:
-        # --- File discovery and sorting ---
-        all_txt_files_found = list(wos_data_dir.glob(file_pattern_glob))
-        
-        wos_files_to_process = []
-        # Regex to match pattern like "savedrecs.txt" or "savedrecs (1).txt"
-        # This assumes the base name before parenthesis is 'savedrecs'
-        file_name_pattern_re = re.compile(r"^(savedrecs)(?: \((\d+)\))?\.txt$") # Specific to 'savedrecs' base
-        
-        files_with_num = []
-        # Apply numeric sort only if the glob pattern suggests multiple 'savedrecs' files
-        if '*' in file_pattern_glob or '?' in file_pattern_glob or '[' in file_pattern_glob: # Heuristic for glob
-            for f_path in all_txt_files_found:
-                match = file_name_pattern_re.match(f_path.name)
-                if match:
-                    base_name = match.group(1) # e.g., "savedrecs"
-                    num_str = match.group(2) # The number in parentheses, if any
-                    num = int(num_str) if num_str else 0 # No number in () means 0 for sorting
-                    if base_name == "savedrecs": # Ensure it's the correct base filename for this sorting logic
-                         files_with_num.append((num, f_path))
-            
-            if files_with_num: # If we found files matching the numbered 'savedrecs' pattern
-                files_with_num.sort(key=lambda x: x[0]) # Sort by the extracted number
-                wos_files_to_process = [f_path for num, f_path in files_with_num]
-            else: # Fallback to simple alphanumeric sort if no numbered 'savedrecs' files found or different pattern
-                wos_files_to_process = sorted(all_txt_files_found)
-        else: # For single specific filename (no glob characters), just use it
-            wos_files_to_process = all_txt_files_found
-        # --- End file discovery and sorting ---
+    for wos_file_path in wos_files_to_process:
+        print(f"Parsing {wos_file_path.name}...")
+        pubs_from_file = parse_wos_file(wos_file_path)
+        all_publications.extend(pubs_from_file)
+    
+    print("\nFinished parsing all files.")
 
-        print(f"Found {len(wos_files_to_process)} files to process (sorted):")
-        for f_p in wos_files_to_process:
-            print(f"  - {f_p.name}")
+    # Build the network
+    cocitation_graph = build_cocitation_network(all_publications, 
+                                                min_node_citations_threshold=2, 
+                                                min_cocitation_strength_threshold=2)
 
-        if not wos_files_to_process:
-            print(f"No files matching the pattern '{file_pattern_glob}' found in {wos_data_dir}.")
-        else:
-            for wos_file_path in wos_files_to_process:
-                print(f"\nParsing {wos_file_path.name}...")
-                pubs_from_file = parse_wos_file(wos_file_path)
-                all_publications.extend(pubs_from_file)
-                print(f"  Added {len(pubs_from_file)} publications from {wos_file_path.name}. Total: {len(all_publications)}")
+    if cocitation_graph:
+        # --- MODIFIED: Output filenames are now project-specific ---
+        graphml_filename = f"{args.project_folder}_network.graphml"
+        gexf_filename = f"{args.project_folder}_network.gexf"
+        # --- END MODIFIED ---
 
-            if not all_publications:
-                print("No publications were parsed successfully from any file.")
-            else:
-                print(f"\nTotal publications loaded: {len(all_publications)}")
-                # Call the network building function with the specified thresholds
-                G_combined = build_cocitation_network(
-                    all_publications,
-                    min_node_citations_threshold=MIN_NODE_CITATIONS,
-                    min_cocitation_strength_threshold=MIN_COCITATION_STRENGTH
-                )
-                # Save the resulting (potentially filtered) graph
-                save_graph_to_graphml(G_combined, output_filepath)
+        save_graph_to_graphml(cocitation_graph, output_dir, graphml_filename)
+        save_graph_to_gexf(cocitation_graph, output_dir, gexf_filename)
 
-    print("\nScript finished.")
+    print(f"\n--- Process for project '{args.project_folder}' complete. ---")
+
+
+if __name__ == "__main__":
+    main()

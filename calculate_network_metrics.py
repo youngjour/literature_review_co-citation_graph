@@ -3,6 +3,7 @@ import networkx as nx
 from pathlib import Path
 import re
 import operator
+import argparse
 
 # Reuse the robust parsing and network building functions from your project
 from build_network import parse_wos_file, build_cocitation_network
@@ -91,8 +92,22 @@ def calculate_and_compile_metrics(graph):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Run analysis for a specific project.")
+    parser.add_argument("project_folder", type=str, help="The name of the project folder inside 'data/wos/' (e.g., 'smart_city' or 'urban_computing')")
+    args = parser.parse_args()
+
     script_dir = Path(__file__).resolve().parent
-    wos_data_dir = script_dir / 'data' / 'wos'
+    wos_data_dir = script_dir / 'data' / 'wos' / args.project_folder
+
+    # ... (the rest of the original code in the __main__ block of each script) ...
+    # For example, in extract_top_papers.py, you would also want to modify the output filename:
+    # OUTPUT_FILENAME = f"{args.project_folder}_top_{TOP_N}_cited_papers.txt"
+    # And in calculate_network_metrics.py:
+    # OUTPUT_FILENAME = f"{args.project_folder}_network_metrics.csv"
+    
+    # NOTE: You will need to make sure the rest of the main block code is correctly
+    # placed after these modifications. The core change is adding the argparse
+    # section and modifying the wos_data_dir path.
     output_dir = script_dir / 'data' # Save the CSV in the main data directory
 
     # 1. Load all publications from the raw files
