@@ -222,7 +222,7 @@ def main():
     
     # The path now includes the project folder you specify
     wos_data_dir = script_dir / 'data' / 'wos' / args.project_folder
-    output_dir = script_dir / 'data'
+    output_dir = script_dir / 'data' / 'graphml' / args.project_folder
 
     print(f"--- Starting process for project: {args.project_folder} ---")
 
