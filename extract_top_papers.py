@@ -94,7 +94,7 @@ if __name__ == "__main__":
     wos_data_dir = script_dir / 'data' / 'wos' / args.project_folder
     
     # Create a dedicated, project-specific output directory
-    output_dir = script_dir / 'data' / 'extracted_papers' / args.project_folder
+    output_dir = script_dir / 'data' / 'export' / args.project_folder
     
     # Make the output filename specific to the project and the number of papers
     output_filename = f"top_{args.top_n}_source_papers.txt"
