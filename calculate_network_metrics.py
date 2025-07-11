@@ -99,7 +99,7 @@ if __name__ == "__main__":
     script_dir = Path(__file__).resolve().parent
     # Construct paths based on the project folder argument
     wos_data_dir = script_dir / 'data' / 'wos' / args.project_folder
-    output_dir = script_dir / 'data' / 'graphml' / args.project_folder
+    output_dir = script_dir / 'data' / 'export' / args.project_folder
     
     # Make the output filename specific to the project
     output_filename = f"{args.project_folder}_network_metrics.csv"

@@ -1,3 +1,5 @@
+# extract_top_papers.py
+
 import re
 from pathlib import Path
 from collections import defaultdict
@@ -118,6 +120,9 @@ def write_records_to_file(records, output_dir, filename):
         print("  No records to write.")
         return
 
+    # Ensure the output directory exists before writing
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
     output_filepath = output_dir / filename
     
     field_order = [
@@ -156,10 +161,12 @@ if __name__ == "__main__":
     
     # Construct paths based on the project folder argument
     wos_data_dir = script_dir / 'data' / 'wos' / args.project_folder
-    output_dir = script_dir / 'data' / 'top_papers' / args.project_folder
+    
+    # Create a dedicated, project-specific output directory
+    output_dir = script_dir / 'data' / 'extracted_papers' / args.project_folder
     
     # Make the output filename specific to the project and the number of papers
-    output_filename = f"{args.project_folder}_top_{args.top_n}_cited_papers.txt"
+    output_filename = f"top_{args.top_n}_cited_papers.txt"
 
     print(f"\n--- Starting extraction for project: {args.project_folder} ---")
 
